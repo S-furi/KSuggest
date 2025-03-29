@@ -31,11 +31,13 @@ object KSuggest {
             throw IllegalStateException("Something went wrong")
         }
 
+        val loader = URLClassLoader(arrayOf(jarFile.toURI().toURL()), this.javaClass.classLoader)
+
         JarFile(jarFile).use { jar ->
             for (entry in jar.entries()) {
                 if (entry.name.endsWith(".class") && !entry.name.contains("module-info.class")) {
                     val className = entry.name.removeSuffix(".class").replace("/", ".")
-                    val clazz = URLClassLoader(arrayOf(jarFile.toURI().toURL())).loadClass(className)
+                    val clazz = loader.loadClass(className)
                     yield(clazz)
                 }
             }

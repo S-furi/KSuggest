@@ -45,11 +45,13 @@ class KSuggest {
             throw IllegalStateException("Something went wrong")
         }
 
+        val loader = URLClassLoader(arrayOf(jarFile.toURI().toURL()))
+
         JarFile(jarFile).use { jar ->
             for (entry in jar.entries()) {
                 if (entry.name.endsWith(".class") && !entry.name.contains("module-info.class")) {
                     val className = entry.name.removeSuffix(".class").replace("/", ".")
-                    val clazz = URLClassLoader(arrayOf(jarFile.toURI().toURL())).loadClass(className)
+                    val clazz = loader.loadClass(className)
                     yield(clazz)
                 }
             }
