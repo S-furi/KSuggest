@@ -8,11 +8,15 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLClassLoader
 import java.util.jar.JarFile
+import java.util.jar.JarInputStream
 
 class KSuggest {
     private val jarName = "kotlin-stdlib-2.1.10.jar"
+    private val sourcesName = "kotlin-stdlib-2.1.10-sources.jar"
     private val ktStdLibMvn = "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.10/$jarName"
-    private val ktStdLibPath= listOf("src", "main", "resources", jarName).joinToString(File.separator)
+    private val ktStdLibSourcesMvn = "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.10/$sourcesName"
+    private var ktStdLibPath: String? = null
+    private var ktSourcesPath: String? = null
 
     fun simpleLazyFinder(name: String): Sequence<String> = lazyStdLibDeclarations().filter { it.simpleName.startsWith(name) }.map { it.name }
 
@@ -26,21 +30,53 @@ class KSuggest {
             }.toList().awaitAll().flatten()
     }
 
+    fun inspectSource(sourceName: String): Unit {
+        if (this.ktSourcesPath == null || !File(this.ktSourcesPath!!).exists()) {
+            val sourcesPath = kotlin.io.path.createTempFile(this.ktStdLibSourcesMvn).toFile().toString()
+            val connection = (URI(this.ktStdLibSourcesMvn).toURL().openConnection() as HttpURLConnection).also {
+                it.requestMethod = "GET"
+            }
+            val jar = connection.inputStream.buffered().use { it.readAllBytes() }
+            File(this.ktSourcesPath!!).writeBytes(jar)
+        }
+
+        val jarFile = try {
+            File(this.ktSourcesPath!!)
+        } catch (e: NullPointerException) {
+            throw IllegalStateException("Something went wrong")
+        }
+
+        JarFile(jarFile).use { jar ->
+            for (entry in jar.entries()) {
+                if (entry.name.endsWith(".kt")) {
+                    val inputStream = jar.getInputStream(entry)
+                    if (inputStream != null) {
+                        val sourceLines = inputStream.bufferedReader().readLines()
+                        sourceLines.filter { it.contains(sourceName) }.forEach(::println)
+                    }
+                }
+            }
+        }
+    }
+
     private fun getKtStdLib() {
-        if (File(this.ktStdLibPath).exists()) {
+        if (this.ktStdLibPath != null && File(this.ktStdLibPath!!).exists()) {
             println("$jarName already exists")
             return
         }
+
+        this.ktStdLibPath = kotlin.io.path.createTempFile(this.jarName).toFile().toString()
+
         val connection = (URI(this.ktStdLibMvn).toURL().openConnection() as HttpURLConnection).also { it.requestMethod = "GET" }
         val jar = connection.inputStream.buffered().use { it.readAllBytes() }
-        File(this.ktStdLibPath).writeBytes(jar)
+        File(this.ktStdLibPath!!).writeBytes(jar)
         println("$jarName downloaded successfully at ${this.ktStdLibPath}")
     }
 
     private fun lazyStdLibDeclarations() = sequence<Class<*>> {
         ktStdLibIsPresent()
         val jarFile = try {
-            File(ktStdLibPath)
+            File(ktStdLibPath!!)
         } catch (e: NullPointerException) {
             throw IllegalStateException("Something went wrong")
         }
@@ -58,7 +94,7 @@ class KSuggest {
         }
     }
 
-    private fun ktStdLibIsPresent() = File(ktStdLibPath).exists().takeIf { it } ?: getKtStdLib()
+    private fun ktStdLibIsPresent() = (this.ktStdLibPath != null && File(this.ktStdLibPath!!).exists()).takeIf { it } ?: getKtStdLib()
 }
 
 
@@ -70,8 +106,12 @@ fun main(args: Array<String>) {
 
     val nameToFind = args[0]
     val kSuggest = KSuggest()
-    println("Simple Lazy Finder results: ")
-    kSuggest.simpleLazyFinder(nameToFind).forEach(::println)
-    println("Concurrent Lazy Finder results: ")
-    kSuggest.concurrentLazyFinder(nameToFind, bufSize = 100).forEach(::println)
+//    println("Simple Lazy Finder results: ")
+//    kSuggest.simpleLazyFinder(nameToFind).forEach(::println)
+//    println("Concurrent Lazy Finder results: ")
+    val res = kSuggest.concurrentLazyFinder(nameToFind, bufSize = 100)
+    res.forEach(::println)
+
+    res.forEach { kSuggest.inspectSource(it.split(".").last()) }
+
 }
