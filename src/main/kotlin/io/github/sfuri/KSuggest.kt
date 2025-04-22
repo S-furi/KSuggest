@@ -113,5 +113,6 @@ fun main(args: Array<String>) {
     res.forEach(::println)
 
     res.forEach { kSuggest.inspectSource(it.split(".").last()) }
-
+    // Problem: This will print out all the lines that contains the given
+    // suggestion, not the declaration one.
 }
